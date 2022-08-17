@@ -1,0 +1,11 @@
+numba
+numpy
+nuscenes-devkit
+opencv-python-headless
+pandas
+pytorch-lightning==1.6.0
+scikit-image
+scipy
+tensorboardX
+torch==1.9.0
+torchvision==0.10.0
