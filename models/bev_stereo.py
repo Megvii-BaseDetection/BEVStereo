@@ -1,7 +1,7 @@
 from torch import nn
 
 from layers.backbones.lss_fpn import LSSFPN
-from layers.heads.bev_depth_head import BEVDepthHead
+from layers.heads.bev_stereo_head import BEVStereoHead
 
 __all__ = ['BEVStereo']
 
@@ -20,7 +20,7 @@ class BEVStereo(nn.Module):
     def __init__(self, backbone_conf, head_conf, is_train_depth=False):
         super(BEVStereo, self).__init__()
         self.backbone = LSSFPN(**backbone_conf)
-        self.head = BEVDepthHead(**head_conf)
+        self.head = BEVStereoHead(**head_conf)
         self.is_train_depth = is_train_depth
 
     def forward(

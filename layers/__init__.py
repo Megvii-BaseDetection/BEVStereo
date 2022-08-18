@@ -1,3 +1,3 @@
-from .heads.bev_depth_head import BEVDepthHead
+from .heads.bev_stereo_head import BEVStereoHead
 
-__all__ = ['BEVDepthHead']
+__all__ = ['BEVStereoHead']
