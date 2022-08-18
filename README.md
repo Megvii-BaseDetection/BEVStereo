@@ -19,6 +19,7 @@ python setup.py develop
 ```
 
 ### Data preparation
+We use the same data format as [BEVDepth](https://github.com/Megvii-BaseDetection/BEVDepth), if you have processed it before, please skip.
 **Step 0.** Download nuScenes official dataset.
 
 **Step 1.** Symlink the dataset root to `./data/`.
