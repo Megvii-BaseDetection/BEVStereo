@@ -4,7 +4,7 @@ import pytest
 import torch
 from mmdet3d.core.bbox.structures.lidar_box3d import LiDARInstance3DBoxes
 
-from layers.heads.bev_stereo_head import BEVDepthHead
+from layers.heads.bev_stereo_head import BEVStereoHead
 
 
 class TestLSSFPN(unittest.TestCase):
@@ -68,7 +68,7 @@ class TestLSSFPN(unittest.TestCase):
             post_center_limit_range=[-61.2, -61.2, -10.0, 61.2, 61.2, 10.0],
             max_per_img=500,
             max_pool_nms=False,
-            min_radius=[4, 12, 10, 1, 0.85, 0.175],
+            thresh_scale=[0.6, 0.4, 0.4, 0.7, 0.8, 0.9],
             score_threshold=0.1,
             out_size_factor=4,
             voxel_size=[0.2, 0.2, 8],
@@ -94,7 +94,7 @@ class TestLSSFPN(unittest.TestCase):
             'gaussian_overlap': 0.1,
             'min_radius': 2,
         }
-        self.bevdet_head = BEVDepthHead(**head_conf).cuda()
+        self.bevdet_head = BEVStereoHead(**head_conf).cuda()
 
     @pytest.mark.skipif(torch.cuda.is_available() is False,
                         reason='No gpu available.')

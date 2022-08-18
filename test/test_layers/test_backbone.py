@@ -34,9 +34,13 @@ class TestLSSFPN(unittest.TestCase):
             ),
             'depth_net_conf':
             dict(in_channels=64, mid_channels=64),
+            'num_ranges':
+            4,
+            'range_list': [[2, 8], [8, 16], [16, 28], [28, 58]]
         }
         self.lss_fpn = LSSFPN(**backbone_conf).cuda()
 
+    # TODO: Fix this.
     @pytest.mark.skipif(torch.cuda.is_available() is False,
                         reason='No gpu available.')
     def test_forward(self):
