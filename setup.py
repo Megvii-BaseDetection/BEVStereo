@@ -43,11 +43,11 @@ def make_cuda_ext(name,
 
 
 setup(
-    name='BEVDepth',
+    name='BEVStereo',
     version='0.0.1',
     author='Megvii',
     author_email='liyinhao@megvii.com',
-    description='Code for BEVDepth',
+    description='Code for Stereo',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url=None,

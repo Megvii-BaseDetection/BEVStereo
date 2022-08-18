@@ -35,6 +35,11 @@ class BEVDepthLightningModel(BaseBEVDepthLightningModel):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.key_idxes = [-1]
+        self.backbone_conf.update({
+            'num_ranges':
+            4,
+            'range_list': [[2, 8], [8, 16], [16, 28], [28, 58]]
+        })
         self.head_conf['bev_backbone_conf']['in_channels'] = 80 * (
             len(self.key_idxes) + 1)
         self.head_conf['bev_neck_conf']['in_channels'] = [
