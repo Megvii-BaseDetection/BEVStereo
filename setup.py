@@ -43,7 +43,7 @@ def make_cuda_ext(name,
 
 
 setup(
-    name='BEVStereo',
+    name='bevstereo',
     version='0.0.1',
     author='Megvii',
     author_email='liyinhao@megvii.com',

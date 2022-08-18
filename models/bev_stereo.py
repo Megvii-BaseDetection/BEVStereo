@@ -3,10 +3,10 @@ from torch import nn
 from layers.backbones.lss_fpn import LSSFPN
 from layers.heads.bev_depth_head import BEVDepthHead
 
-__all__ = ['BEVDepth']
+__all__ = ['BEVStereo']
 
 
-class BEVDepth(nn.Module):
+class BEVStereo(nn.Module):
     """Source code of `BEVDepth`, `https://arxiv.org/abs/2112.11790`.
 
     Args:
@@ -18,7 +18,7 @@ class BEVDepth(nn.Module):
 
     # TODO: Reduce grid_conf and data_aug_conf
     def __init__(self, backbone_conf, head_conf, is_train_depth=False):
-        super(BEVDepth, self).__init__()
+        super(BEVStereo, self).__init__()
         self.backbone = LSSFPN(**backbone_conf)
         self.head = BEVDepthHead(**head_conf)
         self.is_train_depth = is_train_depth
