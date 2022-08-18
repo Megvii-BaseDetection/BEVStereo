@@ -33,7 +33,7 @@ from exps.bev_depth_lss_r50_256x704_128x128_24e_2key import \
     BEVDepthLightningModel as BaseBEVDepthLightningModel
 from layers.backbones.lss_fpn import LSSFPN as BaseLSSFPN
 from layers.heads.bev_depth_head import BEVDepthHead
-from models.bev_depth import BEVDepth as BaseBEVDepth
+from models.bev_stereo import BEVStereo as BaseBEVStereo
 
 
 class DepthAggregation(nn.Module):
@@ -114,20 +114,20 @@ class LSSFPN(BaseLSSFPN):
         return img_feat_with_depth
 
 
-class BEVDepth(BaseBEVDepth):
+class BEVStereo(BaseBEVStereo):
     def __init__(self, backbone_conf, head_conf, is_train_depth=True):
-        super(BaseBEVDepth, self).__init__()
+        super(BaseBEVStereo, self).__init__()
         self.backbone = LSSFPN(**backbone_conf)
         self.head = BEVDepthHead(**head_conf)
         self.is_train_depth = is_train_depth
 
 
-class BEVDepthLightningModel(BaseBEVDepthLightningModel):
+class BEVStereoLightningModel(BaseBEVDepthLightningModel):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.model = BEVDepth(self.backbone_conf,
-                              self.head_conf,
-                              is_train_depth=True)
+        self.model = BEVStereo(self.backbone_conf,
+                               self.head_conf,
+                               is_train_depth=True)
         self.data_use_cbgs = True
 
     def configure_optimizers(self):
@@ -143,7 +143,7 @@ def main(args: Namespace) -> None:
     if args.seed is not None:
         pl.seed_everything(args.seed)
 
-    model = BEVDepthLightningModel(**vars(args))
+    model = BEVStereoLightningModel(**vars(args))
     train_dataloader = model.train_dataloader()
     ema_callback = EMACallback(len(train_dataloader.dataset) * args.max_epochs)
     trainer = pl.Trainer.from_argparse_args(args, callbacks=[ema_callback])
@@ -167,7 +167,7 @@ def run_cli():
                                default=0,
                                help='seed for initializing training.')
     parent_parser.add_argument('--ckpt_path', type=str)
-    parser = BEVDepthLightningModel.add_model_specific_args(parent_parser)
+    parser = BEVStereoLightningModel.add_model_specific_args(parent_parser)
     parser.set_defaults(profiler='simple',
                         deterministic=False,
                         max_epochs=20,
