@@ -56,3 +56,7 @@ python [EXP_PATH] --amp_backend native -b 8 --gpus 8
 ```
 python [EXP_PATH] --ckpt_path [CKPT_PATH] -e -b 8 --gpus 8
 ```
+### Benchmark
+|Backbone |mAP |mATE| mASE | mAOE |mAVE| mAAE | NDS | weights |
+| ------ | :---:       |:---:     |:---:  | :---: | :----: | :----: | :----: | :----: |
+|[R50](exps/bev_stereo_lss_r50_256x704_128x128_24e_2key.py)| 0.3494 |  0.6671     |0.2785 | 0.5606 | 0.4686 | 0.2295 | 0.4543 | [github](https://github.com/Megvii-BaseDetection/BEVStereo/releases/download/v0.0.1/bev_stereo_lss_r50_256x704_128x128_24e_2key.pth)
