@@ -369,6 +369,20 @@ class LSSFPN(nn.Module):
             img_backbone_conf (dict): Config for image backbone.
             img_neck_conf (dict): Config for image neck.
             depth_net_conf (dict): Config for depth net.
+            sampling_range (int): The base range of sampling candidates.
+                Defaults to 3.
+            num_samples (int): Number of samples. Defaults to 3.
+            stereo_downsample_factor (int): Downsample factor from input image
+                and stereo depth. Defaults to 4.
+            em_iteration (int): Number of iterations for em. Defaults to 3.
+            min_sigma (float): Minimal value for sigma. Defaults to 1.
+            num_groups (int): Number of groups to keep after inner product.
+                Defaults to 8.
+            num_ranges (int): Number of split ranges. Defaults to 1.
+            range_list (list): Start and end of every range, Defaults to None.
+            k_list (list): Depth of all candidates inside the range.
+                Defaults to None.
+            use_mask (bool): Whether to use mask_net. Defaults to True.
         """
 
         super(LSSFPN, self).__init__()
@@ -463,6 +477,11 @@ class LSSFPN(nn.Module):
             )
 
     def depth_sampling(self):
+        """Generate sampling range of candidates.
+
+        Returns:
+            list[float]: List of all candidates.
+        """
         P_total = erf(self.sampling_range /
                       np.sqrt(2))  # Probability covered by the sampling range
         idx_list = np.arange(0, self.num_samples + 1)
@@ -474,44 +493,72 @@ class LSSFPN(nn.Module):
     def _generate_cost_volume(
         self,
         sweep_index,
-        mag_feats_all_sweeps,
+        stereo_feats_all_sweeps,
         mats_dict,
         depth_sample,
         depth_sample_frustum,
         sensor2sensor_mats,
     ):
-        batch_size, num_channels, height, width = mag_feats_all_sweeps[0].shape
+        """Generate cost volume based on depth sample.
+
+        Args:
+            sweep_index (int): Index of sweep.
+            stereo_feats_all_sweeps (list[Tensor]): Stereo feature
+                of all sweeps.
+            mats_dict (dict):
+                sensor2ego_mats (Tensor): Transformation matrix from
+                    camera to ego with shape of (B, num_sweeps,
+                    num_cameras, 4, 4).
+                intrin_mats (Tensor): Intrinsic matrix with shape
+                    of (B, num_sweeps, num_cameras, 4, 4).
+                ida_mats (Tensor): Transformation matrix for ida with
+                    shape of (B, num_sweeps, num_cameras, 4, 4).
+                sensor2sensor_mats (Tensor): Transformation matrix
+                    from key frame camera to sweep frame camera with
+                    shape of (B, num_sweeps, num_cameras, 4, 4).
+                bda_mat (Tensor): Rotation matrix for bda with shape
+                    of (B, 4, 4).
+            depth_sample (Tensor): Depth map of all candidates.
+            depth_sample_frustum (Tensor): Pre-generated frustum.
+            sensor2sensor_mats (Tensor): Transformation matrix from reference
+                sensor to source sensor.
+
+        Returns:
+            Tensor: Depth score for all sweeps.
+        """
+        batch_size, num_channels, height, width = stereo_feats_all_sweeps[
+            0].shape
         # thres = int(self.mvs_weighting.split("CW")[1])
-        num_sweeps = len(mag_feats_all_sweeps)
+        num_sweeps = len(stereo_feats_all_sweeps)
         depth_score_all_sweeps = list()
         for idx in range(num_sweeps):
             if idx == sweep_index:
                 continue
-            warped_mag_fea = self.homo_warping(
-                mag_feats_all_sweeps[idx],
+            warped_stereo_fea = self.homo_warping(
+                stereo_feats_all_sweeps[idx],
                 mats_dict['intrin_mats'][:, sweep_index, ...],
                 mats_dict['intrin_mats'][:, idx, ...],
                 sensor2sensor_mats[idx],
                 mats_dict['ida_mats'][:, sweep_index, ...],
                 mats_dict['ida_mats'][:, idx, ...],
                 depth_sample,
-                depth_sample_frustum.type_as(mag_feats_all_sweeps[idx]),
+                depth_sample_frustum.type_as(stereo_feats_all_sweeps[idx]),
             )
-            warped_mag_fea = warped_mag_fea.reshape(
+            warped_stereo_fea = warped_stereo_fea.reshape(
                 batch_size, self.num_groups, num_channels // self.num_groups,
                 self.num_samples, height, width)
-            ref_mag_feat = mag_feats_all_sweeps[sweep_index].reshape(
+            ref_stereo_feat = stereo_feats_all_sweeps[sweep_index].reshape(
                 batch_size, self.num_groups, num_channels // self.num_groups,
                 height, width)
             feat_cost = torch.mean(
-                (ref_mag_feat.unsqueeze(3) * warped_mag_fea), axis=2)
+                (ref_stereo_feat.unsqueeze(3) * warped_stereo_fea), axis=2)
             depth_score = self.similarity_net(feat_cost).squeeze(1)
             depth_score_all_sweeps.append(depth_score)
         return torch.stack(depth_score_all_sweeps).mean(0)
 
     def homo_warping(
         self,
-        mag_feat,
+        stereo_feat,
         key_intrin_mats,
         sweep_intrin_mats,
         sensor2sensor_mats,
@@ -520,7 +567,8 @@ class LSSFPN(nn.Module):
         depth_sample,
         frustum,
     ):
-        """Used for mvs method to transfer sweep image feature to key image feature.
+        """Used for mvs method to transfer sweep image feature to
+            key image feature.
 
         Args:
             src_fea(Tensor): image features.
@@ -530,10 +578,12 @@ class LSSFPN(nn.Module):
                 sensor to sweep sensor.
             key_ida_mats(Tensor): Ida matrix for key frame.
             sweep_ida_mats(Tensor): Ida matrix for sweep frame.
+            depth_sample (Tensor): Depth map of all candidates.
+            depth_sample_frustum (Tensor): Pre-generated frustum.
         """
-        batch_size_with_num_cams, channels = mag_feat.shape[0], mag_feat.shape[
-            1]
-        height, width = mag_feat.shape[2], mag_feat.shape[3]
+        batch_size_with_num_cams, channels = stereo_feat.shape[
+            0], stereo_feat.shape[1]
+        height, width = stereo_feat.shape[2], stereo_feat.shape[3]
         with torch.no_grad():
             points = frustum
             points = points.reshape(points.shape[0], -1, points.shape[-1])
@@ -574,22 +624,22 @@ class LSSFPN(nn.Module):
             grid = torch.stack([proj_x_normalized, proj_y_normalized],
                                dim=2)  # [B, Ndepth, H*W, 2]
 
-        warped_mag_fea = F.grid_sample(
-            mag_feat,
+        warped_stereo_fea = F.grid_sample(
+            stereo_feat,
             grid.view(batch_size_with_num_cams, num_depth * height, width, 2),
             mode='bilinear',
             padding_mode='zeros',
         )
-        warped_mag_fea = warped_mag_fea.view(batch_size_with_num_cams,
-                                             channels, num_depth, height,
-                                             width)
+        warped_stereo_fea = warped_stereo_fea.view(batch_size_with_num_cams,
+                                                   channels, num_depth, height,
+                                                   width)
 
-        return warped_mag_fea
+        return warped_stereo_fea
 
     def _forward_stereo(
         self,
         sweep_index,
-        mag_feats_all_sweeps,
+        stereo_feats_all_sweeps,
         mono_depth_all_sweeps,
         mats_dict,
         sensor2sensor_mats,
@@ -598,17 +648,49 @@ class LSSFPN(nn.Module):
         range_score_all_sweeps,
         depth_feat_all_sweeps,
     ):
+        """Forward function to generate stereo depth.
+
+        Args:
+            sweep_index (int): Index of sweep.
+            stereo_feats_all_sweeps (list[Tensor]): Stereo feature
+                of all sweeps.
+            mono_depth_all_sweeps (list[Tensor]):
+            mats_dict (dict):
+                sensor2ego_mats (Tensor): Transformation matrix from
+                    camera to ego with shape of (B, num_sweeps,
+                    num_cameras, 4, 4).
+                intrin_mats (Tensor): Intrinsic matrix with shape
+                    of (B, num_sweeps, num_cameras, 4, 4).
+                ida_mats (Tensor): Transformation matrix for ida with
+                    shape of (B, num_sweeps, num_cameras, 4, 4).
+                sensor2sensor_mats (Tensor): Transformation matrix
+                    from key frame camera to sweep frame camera with
+                    shape of (B, num_sweeps, num_cameras, 4, 4).
+                bda_mat (Tensor): Rotation matrix for bda with shape
+                    of (B, 4, 4).
+            sensor2sensor_mats(Tensor): Transformation matrix from key
+                sensor to sweep sensor.
+            mu_all_sweeps (list[Tensor]): List of mu for all sweeps.
+            sigma_all_sweeps (list[Tensor]): List of sigma for all sweeps.
+            range_score_all_sweeps (list[Tensor]): List of all range score
+                for all sweeps.
+            depth_feat_all_sweeps (list[Tensor]): List of all depth feat for
+                all sweeps.
+
+        Returns:
+            Tensor: stereo_depth
+        """
         batch_size_with_cams, _, feat_height, feat_width = \
-            mag_feats_all_sweeps[0].shape
-        device = mag_feats_all_sweeps[0].device
+            stereo_feats_all_sweeps[0].shape
+        device = stereo_feats_all_sweeps[0].device
         d_coords = torch.arange(*self.d_bound,
                                 dtype=torch.float,
                                 device=device).reshape(1, -1, 1, 1)
         d_coords = d_coords.repeat(batch_size_with_cams, 1, feat_height,
                                    feat_width)
-        stereo_depth = mag_feats_all_sweeps[0].new_zeros(
+        stereo_depth = stereo_feats_all_sweeps[0].new_zeros(
             batch_size_with_cams, self.depth_channels, feat_height, feat_width)
-        mask_score = mag_feats_all_sweeps[0].new_zeros(
+        mask_score = stereo_feats_all_sweeps[0].new_zeros(
             batch_size_with_cams,
             self.depth_channels,
             feat_height * self.stereo_downsample_factor //
@@ -631,7 +713,7 @@ class LSSFPN(nn.Module):
                 for sigma in sigma_all_sweeps
             ]
             batch_size_with_cams, _, feat_height, feat_width =\
-                mag_feats_all_sweeps[0].shape
+                stereo_feats_all_sweeps[0].shape
             mu = mu_all_sweeps_single_range[sweep_index]
             sigma = sigma_all_sweeps_single_range[sweep_index]
             for _ in range(self.em_iteration):
@@ -641,7 +723,7 @@ class LSSFPN(nn.Module):
                     depth_sample, self.stereo_downsample_factor)
                 mu_score = self._generate_cost_volume(
                     sweep_index,
-                    mag_feats_all_sweeps,
+                    stereo_feats_all_sweeps,
                     mats_dict,
                     depth_sample,
                     depth_sample_frustum,
@@ -834,6 +916,33 @@ class LSSFPN(nn.Module):
         depth_sample_frustum,
         sensor2sensor_mats,
     ):
+        """Forward function to generate mask.
+
+        Args:
+            sweep_index (int): Index of sweep.
+            mono_depth_all_sweeps (list[Tensor]): List of mono_depth for
+                all sweeps.
+            mats_dict (dict):
+                sensor2ego_mats (Tensor): Transformation matrix from
+                    camera to ego with shape of (B, num_sweeps,
+                    num_cameras, 4, 4).
+                intrin_mats (Tensor): Intrinsic matrix with shape
+                    of (B, num_sweeps, num_cameras, 4, 4).
+                ida_mats (Tensor): Transformation matrix for ida with
+                    shape of (B, num_sweeps, num_cameras, 4, 4).
+                sensor2sensor_mats (Tensor): Transformation matrix
+                    from key frame camera to sweep frame camera with
+                    shape of (B, num_sweeps, num_cameras, 4, 4).
+                bda_mat (Tensor): Rotation matrix for bda with shape
+                    of (B, 4, 4).
+            depth_sample (Tensor): Depth map of all candidates.
+            depth_sample_frustum (Tensor): Pre-generated frustum.
+            sensor2sensor_mats (Tensor): Transformation matrix from reference
+                sensor to source sensor.
+
+        Returns:
+            Tensor: Generated mask.
+        """
         num_sweeps = len(mono_depth_all_sweeps)
         mask_all_sweeps = list()
         for idx in range(num_sweeps):
@@ -869,6 +978,30 @@ class LSSFPN(nn.Module):
                               mats_dict,
                               depth_score,
                               is_return_depth=False):
+        """Forward function for single sweep.
+
+        Args:
+            sweep_index (int): Index of sweeps.
+            sweep_imgs (Tensor): Input images.
+            mats_dict (dict):
+                sensor2ego_mats(Tensor): Transformation matrix from
+                    camera to ego with shape of (B, num_sweeps,
+                    num_cameras, 4, 4).
+                intrin_mats(Tensor): Intrinsic matrix with shape
+                    of (B, num_sweeps, num_cameras, 4, 4).
+                ida_mats(Tensor): Transformation matrix for ida with
+                    shape of (B, num_sweeps, num_cameras, 4, 4).
+                sensor2sensor_mats(Tensor): Transformation matrix
+                    from key frame camera to sweep frame camera with
+                    shape of (B, num_sweeps, num_cameras, 4, 4).
+                bda_mat(Tensor): Rotation matrix for bda with shape
+                    of (B, 4, 4).
+            is_return_depth (bool, optional): Whether to return depth.
+                Default: False.
+
+        Returns:
+            Tensor: BEV feature map.
+        """
         batch_size, num_cams = context.shape[0], context.shape[1]
         context = context.reshape(batch_size * num_cams, *context.shape[2:])
         depth = depth_score
@@ -934,7 +1067,7 @@ class LSSFPN(nn.Module):
         context_all_sweeps = list()
         depth_feat_all_sweeps = list()
         img_feats_all_sweeps = list()
-        mag_feats_all_sweeps = list()
+        stereo_feats_all_sweeps = list()
         mu_all_sweeps = list()
         sigma_all_sweeps = list()
         mono_depth_all_sweeps = list()
@@ -942,12 +1075,12 @@ class LSSFPN(nn.Module):
         for sweep_index in range(0, num_sweeps):
             if sweep_index > 0:
                 with torch.no_grad():
-                    img_feats, mag_feats = self.get_cam_feats(
+                    img_feats, stereo_feats = self.get_cam_feats(
                         sweep_imgs[:, sweep_index:sweep_index + 1, ...])
                     img_feats_all_sweeps.append(
                         img_feats.view(batch_size * num_cams,
                                        *img_feats.shape[3:]))
-                    mag_feats_all_sweeps.append(mag_feats)
+                    stereo_feats_all_sweeps.append(stereo_feats)
                     depth_feat, context, mu, sigma, range_score, mono_depth =\
                         self.depth_net(img_feats.view(batch_size * num_cams,
                                        *img_feats.shape[3:]), mats_dict)
@@ -957,12 +1090,12 @@ class LSSFPN(nn.Module):
                                             *context.shape[1:])))
                     depth_feat_all_sweeps.append(depth_feat)
             else:
-                img_feats, mag_feats = self.get_cam_feats(
+                img_feats, stereo_feats = self.get_cam_feats(
                     sweep_imgs[:, sweep_index:sweep_index + 1, ...])
                 img_feats_all_sweeps.append(
                     img_feats.view(batch_size * num_cams,
                                    *img_feats.shape[3:]))
-                mag_feats_all_sweeps.append(mag_feats)
+                stereo_feats_all_sweeps.append(stereo_feats)
                 depth_feat, context, mu, sigma, range_score, mono_depth =\
                     self.depth_net(img_feats.view(batch_size * num_cams,
                                    *img_feats.shape[3:]), mats_dict)
@@ -993,7 +1126,7 @@ class LSSFPN(nn.Module):
                 if self.use_mask:
                     stereo_depth, mask = self._forward_stereo(
                         ref_idx,
-                        mag_feats_all_sweeps,
+                        stereo_feats_all_sweeps,
                         mono_depth_all_sweeps,
                         mats_dict,
                         sensor2sensor_mats,
@@ -1005,7 +1138,7 @@ class LSSFPN(nn.Module):
                 else:
                     stereo_depth = self._forward_stereo(
                         ref_idx,
-                        mag_feats_all_sweeps,
+                        stereo_feats_all_sweeps,
                         mono_depth_all_sweeps,
                         mats_dict,
                         sensor2sensor_mats,
@@ -1021,7 +1154,7 @@ class LSSFPN(nn.Module):
                     if self.use_mask:
                         stereo_depth, mask = self._forward_stereo(
                             ref_idx,
-                            mag_feats_all_sweeps,
+                            stereo_feats_all_sweeps,
                             mono_depth_all_sweeps,
                             mats_dict,
                             sensor2sensor_mats,
@@ -1033,7 +1166,7 @@ class LSSFPN(nn.Module):
                     else:
                         stereo_depth = self._forward_stereo(
                             ref_idx,
-                            mag_feats_all_sweeps,
+                            stereo_feats_all_sweeps,
                             mono_depth_all_sweeps,
                             mats_dict,
                             sensor2sensor_mats,
