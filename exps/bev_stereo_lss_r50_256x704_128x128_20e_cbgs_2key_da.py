@@ -32,7 +32,7 @@ from callbacks.ema import EMACallback
 from exps.bev_stereo_lss_r50_256x704_128x128_24e_2key import \
     BEVDepthLightningModel as BaseBEVDepthLightningModel
 from layers.backbones.lss_fpn import LSSFPN as BaseLSSFPN
-from layers.heads.bev_stereo_head import BEVDepthHead
+from layers.heads.bev_stereo_head import BEVStereoHead
 from models.bev_stereo import BEVStereo as BaseBEVStereo
 
 
@@ -118,7 +118,7 @@ class BEVStereo(BaseBEVStereo):
     def __init__(self, backbone_conf, head_conf, is_train_depth=True):
         super(BaseBEVStereo, self).__init__()
         self.backbone = LSSFPN(**backbone_conf)
-        self.head = BEVDepthHead(**head_conf)
+        self.head = BEVStereoHead(**head_conf)
         self.is_train_depth = is_train_depth
 
 
