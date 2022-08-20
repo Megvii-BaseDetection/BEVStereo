@@ -1,4 +1,27 @@
 # Copyright (c) Megvii Inc. All rights reserved.
+"""
+mAP: 0.3494
+mATE: 0.6671
+mASE: 0.2785
+mAOE: 0.5606
+mAVE: 0.4686
+mAAE: 0.2295
+NDS: 0.4543
+Eval time: 204.2s
+
+Per-class results:
+Object Class    AP      ATE     ASE     AOE     AVE     AAE
+car     0.509   0.522   0.163   0.187   0.507   0.228
+truck   0.287   0.694   0.213   0.202   0.449   0.229
+bus     0.390   0.682   0.207   0.152   0.903   0.260
+trailer 0.168   0.943   0.248   0.491   0.340   0.186
+construction_vehicle    0.087   1.054   0.515   1.200   0.104   0.377
+pedestrian      0.351   0.730   0.299   0.987   0.575   0.320
+motorcycle      0.368   0.583   0.262   0.722   0.661   0.227
+bicycle 0.338   0.494   0.258   0.920   0.209   0.008
+traffic_cone    0.494   0.502   0.341   nan     nan     nan
+barrier 0.502   0.467   0.278   0.185   nan     nan
+"""
 from argparse import ArgumentParser, Namespace
 
 import mmcv
