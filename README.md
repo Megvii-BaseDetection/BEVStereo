@@ -3,6 +3,9 @@ BEVStereo is a new multi-view 3D object detector using temporal stereo to enhanc
 
 <img src="assets/framework.png" width="1000" >
 
+## Updates!!
+* 【2022/08/24】 We submitted our result on [nuScenes Detection Task](https://nuscenes.org/object-detection?externalData=all&mapData=all&modalities=Camera) and achieved the SOTA.
+
 ## Quick Start
 ### Installation
 **Step 0.** Install [pytorch](https://pytorch.org/)(v1.9.0).
