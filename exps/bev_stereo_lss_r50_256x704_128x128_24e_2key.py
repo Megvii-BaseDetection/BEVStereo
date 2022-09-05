@@ -1,4 +1,27 @@
 # Copyright (c) Megvii Inc. All rights reserved.
+"""
+mAP: 0.3456
+mATE: 0.6589
+mASE: 0.2774
+mAOE: 0.5500
+mAVE: 0.4980
+mAAE: 0.2278
+NDS: 0.4516
+Eval time: 158.2s
+
+Per-class results:
+Object Class    AP      ATE     ASE     AOE     AVE     AAE
+car     0.510   0.525   0.165   0.188   0.510   0.226
+truck   0.288   0.698   0.220   0.205   0.443   0.227
+bus     0.378   0.622   0.210   0.135   0.896   0.289
+trailer 0.156   1.003   0.219   0.482   0.609   0.179
+construction_vehicle    0.094   0.929   0.502   1.209   0.108   0.365
+pedestrian      0.356   0.728   0.297   1.005   0.579   0.319
+motorcycle      0.361   0.571   0.258   0.734   0.631   0.211
+bicycle 0.318   0.533   0.269   0.793   0.208   0.007
+traffic_cone    0.488   0.501   0.355   nan     nan     nan
+barrier 0.506   0.478   0.277   0.200   nan     nan
+"""
 from argparse import ArgumentParser, Namespace
 
 import mmcv
@@ -11,8 +34,8 @@ import torch.utils.data.distributed
 import torchvision.models as models
 from pytorch_lightning.core import LightningModule
 from torch.cuda.amp.autocast_mode import autocast
+from torch.optim.lr_scheduler import MultiStepLR
 
-from callbacks.ema import EMACallback
 from dataset.nusc_mv_det_dataset import NuscMVDetDataset, collate_fn
 from evaluators.det_mv_evaluators import DetMVNuscEvaluator
 from models.bev_stereo import BEVStereo
@@ -183,7 +206,7 @@ head_conf = {
 }
 
 
-class BEVDepthLightningModel(LightningModule):
+class BEVStereoLightningModel(LightningModule):
     MODEL_NAMES = sorted(name for name in models.__dict__
                          if name.islower() and not name.startswith('__')
                          and callable(models.__dict__[name]))
@@ -374,7 +397,8 @@ class BEVDepthLightningModel(LightningModule):
         optimizer = torch.optim.AdamW(self.model.parameters(),
                                       lr=lr,
                                       weight_decay=1e-7)
-        return [optimizer]
+        scheduler = MultiStepLR(optimizer, [19, 23])
+        return [[optimizer], [scheduler]]
 
     def train_dataloader(self):
         train_dataset = NuscMVDetDataset(
@@ -444,10 +468,8 @@ def main(args: Namespace) -> None:
     if args.seed is not None:
         pl.seed_everything(args.seed)
 
-    model = BEVDepthLightningModel(**vars(args))
-    train_dataloader = model.train_dataloader()
-    ema_callback = EMACallback(len(train_dataloader.dataset) * args.max_epochs)
-    trainer = pl.Trainer.from_argparse_args(args, callbacks=[ema_callback])
+    model = BEVStereoLightningModel(**vars(args))
+    trainer = pl.Trainer.from_argparse_args(args)
     if args.evaluate:
         trainer.test(model, ckpt_path=args.ckpt_path)
     else:
@@ -468,7 +490,7 @@ def run_cli():
                                default=0,
                                help='seed for initializing training.')
     parent_parser.add_argument('--ckpt_path', type=str)
-    parser = BEVDepthLightningModel.add_model_specific_args(parent_parser)
+    parser = BEVStereoLightningModel.add_model_specific_args(parent_parser)
     parser.set_defaults(
         profiler='simple',
         deterministic=False,
@@ -477,10 +499,10 @@ def run_cli():
         num_sanity_val_steps=0,
         gradient_clip_val=5,
         limit_val_batches=0,
-        enable_checkpointing=False,
+        enable_checkpointing=True,
         precision=16,
-        default_root_dir='./outputs/bev_depth_lss_r50_256x704_128x128_24e_2key'
-    )
+        default_root_dir='./outputs/bev_stereo_lss_r50_256x704_'
+        '128x128_24e_2key')
     args = parser.parse_args()
     main(args)
 

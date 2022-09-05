@@ -1,25 +1,26 @@
 # Copyright (c) Megvii Inc. All rights reserved.
 """
-mAP: 0.3589
-mATE: 0.6119
-mASE: 0.2692
-mAOE: 0.5074
-mAVE: 0.4086
-mAAE: 0.2009
-NDS: 0.4797
-Eval time: 183.3s
+mAP: 0.3576
+mATE: 0.6071
+mASE: 0.2684
+mAOE: 0.4157
+mAVE: 0.3928
+mAAE: 0.2021
+NDS: 0.4902
+Eval time: 129.7s
+
 Per-class results:
 Object Class    AP      ATE     ASE     AOE     AVE     AAE
-car     0.559   0.475   0.157   0.112   0.370   0.205
-truck   0.270   0.659   0.196   0.103   0.356   0.181
-bus     0.374   0.651   0.184   0.072   0.846   0.326
-trailer 0.179   0.963   0.227   0.512   0.294   0.127
-construction_vehicle    0.081   0.825   0.481   1.352   0.094   0.345
-pedestrian      0.363   0.690   0.297   0.831   0.491   0.244
-motorcycle      0.354   0.580   0.255   0.545   0.615   0.164
-bicycle 0.301   0.447   0.280   0.920   0.203   0.015
-traffic_cone    0.539   0.435   0.324   nan     nan     nan
-barrier 0.569   0.394   0.293   0.120   nan     nan
+car     0.559   0.465   0.157   0.110   0.350   0.205
+truck   0.285   0.633   0.205   0.101   0.304   0.209
+bus     0.373   0.667   0.204   0.076   0.896   0.345
+trailer 0.167   0.956   0.228   0.482   0.289   0.100
+construction_vehicle    0.077   0.869   0.454   1.024   0.108   0.335
+pedestrian      0.402   0.652   0.299   0.821   0.493   0.253
+motorcycle      0.321   0.544   0.255   0.484   0.529   0.159
+bicycle 0.276   0.466   0.272   0.522   0.173   0.011
+traffic_cone    0.551   0.432   0.321   nan     nan     nan
+barrier 0.565   0.386   0.287   0.121   nan     nan
 """
 from argparse import ArgumentParser, Namespace
 
@@ -27,10 +28,10 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from torch.cuda.amp.autocast_mode import autocast
+from torch.optim.lr_scheduler import MultiStepLR
 
-from callbacks.ema import EMACallback
 from exps.bev_stereo_lss_r50_256x704_128x128_24e_2key import \
-    BEVDepthLightningModel as BaseBEVDepthLightningModel
+    BEVStereoLightningModel as BEVStereoLightningModel
 from layers.backbones.lss_fpn import LSSFPN as BaseLSSFPN
 from layers.heads.bev_stereo_head import BEVStereoHead
 from models.bev_stereo import BEVStereo as BaseBEVStereo
@@ -122,13 +123,14 @@ class BEVStereo(BaseBEVStereo):
         self.is_train_depth = is_train_depth
 
 
-class BEVStereoLightningModel(BaseBEVDepthLightningModel):
+class BEVStereoLightningModel(BEVStereoLightningModel):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.model = BEVStereo(self.backbone_conf,
                                self.head_conf,
                                is_train_depth=True)
         self.data_use_cbgs = True
+        self.basic_lr_per_img = 2e-4 / 32
 
     def configure_optimizers(self):
         lr = self.basic_lr_per_img * \
@@ -136,7 +138,8 @@ class BEVStereoLightningModel(BaseBEVDepthLightningModel):
         optimizer = torch.optim.AdamW(self.model.parameters(),
                                       lr=lr,
                                       weight_decay=1e-2)
-        return [optimizer]
+        scheduler = MultiStepLR(optimizer, [16, 19])
+        return [[optimizer], [scheduler]]
 
 
 def main(args: Namespace) -> None:
@@ -144,9 +147,7 @@ def main(args: Namespace) -> None:
         pl.seed_everything(args.seed)
 
     model = BEVStereoLightningModel(**vars(args))
-    train_dataloader = model.train_dataloader()
-    ema_callback = EMACallback(len(train_dataloader.dataset) * args.max_epochs)
-    trainer = pl.Trainer.from_argparse_args(args, callbacks=[ema_callback])
+    trainer = pl.Trainer.from_argparse_args(args)
     if args.evaluate:
         trainer.test(model, ckpt_path=args.ckpt_path)
     else:
@@ -175,9 +176,9 @@ def run_cli():
                         num_sanity_val_steps=0,
                         gradient_clip_val=5,
                         limit_val_batches=0,
-                        enable_checkpointing=False,
+                        enable_checkpointing=True,
                         precision=16,
-                        default_root_dir='./outputs/bev_depth_lss_r50_'
+                        default_root_dir='./outputs/bev_stereo_lss_r50_'
                         '256x704_128x128_20e_cbgs_2key_da')
     args = parser.parse_args()
     main(args)
